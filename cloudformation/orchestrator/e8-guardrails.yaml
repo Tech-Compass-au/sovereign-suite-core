@@ -1,55 +1,69 @@
 # ==============================================================================
-# PRODUCT: E8 Multi-Account Orchestrator
-# COMPONENT: Master Deny Service Control Policy (SCP)
-# COMPLIANCE ANCHOR: ISM-1511 (Log Integrity), ISM-0582 (Audit Traceability)
-# DESCRIPTION: Prevents "Self-Blinding" by blocking any action that disables
-#              security logging or configuration monitoring across the Org.
+# PRODUCT: E8 Orchestrator - Guardrails & Logging
+# COMPLIANCE: ISM-1511 (Log Integrity), ISM-1405 (Continuous Logging)
+# DESCRIPTION: Deploys the Master Deny SCP and the Sovereign Audit Trail.
 # ==============================================================================
 
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Sovereign Suite - Master Deny SCP for E8 Compliance'
+Description: 'Sovereign Suite - E8 Core Guardrails and CloudTrail'
+
+Parameters:
+  RootOUID:
+    Type: String
+    Description: The ID of your Root Organizational Unit (e.g., r-asdf)
 
 Resources:
   # ----------------------------------------------------------------------------
-  # RESOURCE: E8MasterDenyPolicy
-  # TYPE: AWS::Organizations::Policy
-  # PURPOSE: Centralized guardrail to enforce log and config persistence.
+  # RESOURCE: LogArchiveBucket
+  # PURPOSE: Central vault for all audit logs.
+  # ----------------------------------------------------------------------------
+  LogArchiveBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'sovereign-audit-logs-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # ----------------------------------------------------------------------------
+  # RESOURCE: SovereignCloudTrail
+  # PURPOSE: Multi-region, Organization-wide audit trail.
+  # ----------------------------------------------------------------------------
+  SovereignCloudTrail:
+    Type: AWS::CloudTrail::Trail
+    Properties:
+      TrailName: Sovereign-Audit-Trail
+      S3BucketName: !Ref LogArchiveBucket
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IsOrganizationTrail: true # Automatically logs all accounts in the Org
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true # Critical for ISM Log Integrity
+
+  # ----------------------------------------------------------------------------
+  # RESOURCE: E8MasterDenyPolicy (Your existing SCP)
   # ----------------------------------------------------------------------------
   E8MasterDenyPolicy:
     Type: AWS::Organizations::Policy
     Properties:
       Name: Sovereign-Master-Deny
       Type: SERVICE_CONTROL_POLICY
-      Description: Blocks disabling of E8 compliance tools (CloudTrail/Config)
+      Description: Blocks disabling of E8 logging (CloudTrail)
       Content:
         Version: "2012-10-17"
         Statement:
           - Sid: PreventSelfBlinding
             Effect: Deny
-            # ------------------------------------------------------------------
-            # COMPLIANCE: ISM-1511 (Backup & Log Integrity)
-            # These actions are blocked to ensure the "Audit Trail" remains 
-            # immutable and cannot be tampered with by local admins.
-            # ------------------------------------------------------------------
             Action:
-              - "cloudtrail:StopLogging"      # Blocks stopping of audit logs
-              - "cloudtrail:DeleteTrail"       # Blocks deletion of audit history
-              - "config:DeleteConfigRule"      # Blocks removal of compliance checks
-              - "config:StopConfigurationRecorder" # Blocks the recording of changes
+              - "cloudtrail:StopLogging"
+              - "cloudtrail:DeleteTrail"
+              - "cloudtrail:UpdateTrail"
             Resource: "*"
-      
-      # ------------------------------------------------------------------------
-      # TARGETING: The policy is attached to the Root OU to ensure it inherits
-      # down to every single account in the Organization (Sovereign Guardrail).
-      # ------------------------------------------------------------------------
       TargetIds: 
-        - !Ref RootOUID # References the parameter passed from GitHub Actions
-
-# ==============================================================================
-# PARAMETERS: Inputs required at deployment time
-# ==============================================================================
-Parameters:
-  RootOUID:
-    Type: String
-    Description: The ID of your Root Organizational Unit (e.g., r-asdf)
-    ConstraintDescription: Must be a valid Organizational Unit ID starting with 'r-'.
+        - !Ref RootOUID
