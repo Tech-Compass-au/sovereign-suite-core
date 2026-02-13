@@ -1,0 +1,53 @@
+# ==============================================================================
+# WORKFLOW: Sovereign Orchestrator Factory
+# COMPLIANCE: ISM-1511 (Log Integrity), ISM-0582 (Traceability)
+# DESCRIPTION: Deploys E8 Multi-Account Guardrails via OIDC.
+# ==============================================================================
+
+name: Deploy Sovereign Orchestrator
+
+on:
+  # ----------------------------------------------------------------------------
+  # TRIGGER 1: Manual Trigger (Force the Blue Button)
+  # ----------------------------------------------------------------------------
+  workflow_dispatch:
+    inputs:
+      deployment_reason:
+        description: 'Why are you running this manually?'
+        required: true
+        default: 'Initial Sovereign Suite Setup'
+
+  # ----------------------------------------------------------------------------
+  # TRIGGER 2: Automatic Trigger
+  # ----------------------------------------------------------------------------
+  push:
+    branches:
+      - main
+    paths:
+      - 'cloudformation/orchestrator/**'
+
+permissions:
+  id-token: write # Required for OIDC Bridge
+  contents: read  # Required to read your YAML files
+
+jobs:
+  Deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Pull code from Tech-Compass-au/sovereign-suite-core
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Assume the SovereignSuiteDeployer role in AWS
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-southeast-2
+
+      # 3. Deploy the Master Deny SCP
+      - name: Deploy Guardrail Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file cloudformation/orchestrator/e8-guardrails.yaml \
+            --stack-name Sovereign-Orche
