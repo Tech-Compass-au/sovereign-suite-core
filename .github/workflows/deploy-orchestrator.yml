@@ -1,53 +1,42 @@
 # ==============================================================================
-# WORKFLOW: Sovereign Orchestrator Factory
-# COMPLIANCE: ISM-1511 (Log Integrity), ISM-0582 (Traceability)
-# DESCRIPTION: Deploys E8 Multi-Account Guardrails via OIDC.
+# WORKFLOW: Sovereign Orchestrator Factory (v2.0)
 # ==============================================================================
 
 name: Deploy Sovereign Orchestrator
 
 on:
-  # ----------------------------------------------------------------------------
-  # TRIGGER 1: Manual Trigger (Force the Blue Button)
-  # ----------------------------------------------------------------------------
   workflow_dispatch:
-    inputs:
-      deployment_reason:
-        description: 'Why are you running this manually?'
-        required: true
-        default: 'Initial Sovereign Suite Setup'
-
-  # ----------------------------------------------------------------------------
-  # TRIGGER 2: Automatic Trigger
-  # ----------------------------------------------------------------------------
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths:
       - 'cloudformation/orchestrator/**'
 
 permissions:
-  id-token: write # Required for OIDC Bridge
-  contents: read  # Required to read your YAML files
+  id-token: write
+  contents: read
 
 jobs:
   Deploy:
     runs-on: ubuntu-latest
     steps:
-      # 1. Pull code from Tech-Compass-au/sovereign-suite-core
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Assume the SovereignSuiteDeployer role in AWS
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-southeast-2
 
-      # 3. Deploy the Master Deny SCP
+      # ------------------------------------------------------------------------
+      # FIX: Passing the secret as an ENV variable first ensures it isn't empty
+      # ------------------------------------------------------------------------
       - name: Deploy Guardrail Stack
+        env:
+          ROOT_ID: ${{ secrets.AWS_ROOT_OU_ID }}
         run: |
           aws cloudformation deploy \
             --template-file cloudformation/orchestrator/e8-guardrails.yaml \
-            --stack-name Sovereign-Orche
+            --stack-name Sovereign-Orchestrator \
+            --parameter-overrides RootOUID="$ROOT_ID" \
+            --capabilities CAPABILITY_IAM
