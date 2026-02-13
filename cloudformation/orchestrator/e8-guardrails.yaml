@@ -1,0 +1,55 @@
+# ==============================================================================
+# PRODUCT: E8 Multi-Account Orchestrator
+# COMPONENT: Master Deny Service Control Policy (SCP)
+# COMPLIANCE ANCHOR: ISM-1511 (Log Integrity), ISM-0582 (Audit Traceability)
+# DESCRIPTION: Prevents "Self-Blinding" by blocking any action that disables
+#              security logging or configuration monitoring across the Org.
+# ==============================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Sovereign Suite - Master Deny SCP for E8 Compliance'
+
+Resources:
+  # ----------------------------------------------------------------------------
+  # RESOURCE: E8MasterDenyPolicy
+  # TYPE: AWS::Organizations::Policy
+  # PURPOSE: Centralized guardrail to enforce log and config persistence.
+  # ----------------------------------------------------------------------------
+  E8MasterDenyPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: Sovereign-Master-Deny
+      Type: SERVICE_CONTROL_POLICY
+      Description: Blocks disabling of E8 compliance tools (CloudTrail/Config)
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PreventSelfBlinding
+            Effect: Deny
+            # ------------------------------------------------------------------
+            # COMPLIANCE: ISM-1511 (Backup & Log Integrity)
+            # These actions are blocked to ensure the "Audit Trail" remains 
+            # immutable and cannot be tampered with by local admins.
+            # ------------------------------------------------------------------
+            Action:
+              - "cloudtrail:StopLogging"      # Blocks stopping of audit logs
+              - "cloudtrail:DeleteTrail"       # Blocks deletion of audit history
+              - "config:DeleteConfigRule"      # Blocks removal of compliance checks
+              - "config:StopConfigurationRecorder" # Blocks the recording of changes
+            Resource: "*"
+      
+      # ------------------------------------------------------------------------
+      # TARGETING: The policy is attached to the Root OU to ensure it inherits
+      # down to every single account in the Organization (Sovereign Guardrail).
+      # ------------------------------------------------------------------------
+      TargetIds: 
+        - !Ref RootOUID # References the parameter passed from GitHub Actions
+
+# ==============================================================================
+# PARAMETERS: Inputs required at deployment time
+# ==============================================================================
+Parameters:
+  RootOUID:
+    Type: String
+    Description: The ID of your Root Organizational Unit (e.g., r-asdf)
+    ConstraintDescription: Must be a valid Organizational Unit ID starting with 'r-'.
