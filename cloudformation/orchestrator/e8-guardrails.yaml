@@ -1,69 +1,76 @@
-# ==============================================================================
-# PRODUCT: E8 Orchestrator - Guardrails & Logging
-# COMPLIANCE: ISM-1511 (Log Integrity), ISM-1405 (Continuous Logging)
-# DESCRIPTION: Deploys the Master Deny SCP and the Sovereign Audit Trail.
-# ==============================================================================
-
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Sovereign Suite - E8 Core Guardrails and CloudTrail'
+Description: 'Sovereign Suite Core Guardrails (v4)'
 
 Parameters:
   RootOUID:
     Type: String
-    Description: The ID of your Root Organizational Unit (e.g., r-asdf)
 
 Resources:
-  # ----------------------------------------------------------------------------
-  # RESOURCE: LogArchiveBucket
-  # PURPOSE: Central vault for all audit logs.
-  # ----------------------------------------------------------------------------
   LogArchiveBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'sovereign-audit-logs-${AWS::AccountId}'
+      BucketName: !Sub 'sovereign-audit-vault-v4-${AWS::AccountId}'
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
 
-  # ----------------------------------------------------------------------------
-  # RESOURCE: SovereignCloudTrail
-  # PURPOSE: Multi-region, Organization-wide audit trail.
-  # ----------------------------------------------------------------------------
+  LogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LogArchiveBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !Sub 'arn:aws:s3:::${LogArchiveBucket}'
+          - Sid: AWSCloudTrailWrite
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub 'arn:aws:s3:::${LogArchiveBucket}/AWSLogs/${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+
   SovereignCloudTrail:
     Type: AWS::CloudTrail::Trail
+    DependsOn: LogBucketPolicy
     Properties:
       TrailName: Sovereign-Audit-Trail
       S3BucketName: !Ref LogArchiveBucket
       IsLogging: true
       IsMultiRegionTrail: true
-      IsOrganizationTrail: true # Automatically logs all accounts in the Org
+      IsOrganizationTrail: true
       IncludeGlobalServiceEvents: true
-      EnableLogFileValidation: true # Critical for ISM Log Integrity
+      EnableLogFileValidation: true
 
-  # ----------------------------------------------------------------------------
-  # RESOURCE: E8MasterDenyPolicy (Your existing SCP)
-  # ----------------------------------------------------------------------------
   E8MasterDenyPolicy:
     Type: AWS::Organizations::Policy
     Properties:
       Name: Sovereign-Master-Deny
       Type: SERVICE_CONTROL_POLICY
-      Description: Blocks disabling of E8 logging (CloudTrail)
-      Content:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: PreventSelfBlinding
-            Effect: Deny
-            Action:
-              - "cloudtrail:StopLogging"
-              - "cloudtrail:DeleteTrail"
-              - "cloudtrail:UpdateTrail"
-            Resource: "*"
+      Description: Blocks disabling of E8 logging
+      Content: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "PreventSelfBlinding",
+              "Effect": "Deny",
+              "Action": [
+                "cloudtrail:StopLogging",
+                "cloudtrail:DeleteTrail"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
       TargetIds: 
         - !Ref RootOUID
